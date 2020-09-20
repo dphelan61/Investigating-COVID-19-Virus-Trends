@@ -1,0 +1,175 @@
+---
+title: "Investigating COVID-19 Virus Trends"
+author: "Dennis Phelan"
+date: "8/28/2020"
+output: html_document
+---
+
+# Introduction
+
+This project is about investigating the COVID-19 Virus Trends using a dataset provided by Dataquest which was pulled from Kaggle. This dataset contains data collected between January 20, 2020, and June 1, 2020. The goal of this project is to see if we can see any trends in the virus.
+
+The dataset can be found here:
+> https://dq-content.s3.amazonaws.com/505/covid19.csv
+
+With that, let's start by exploring the data and answer the following questions:
+
+* How much data is there (e.g., the number of columns and rows)?
+* What kind of data do we actually have on hand (e.g., the type of and content of each column)?
+* Is there anything "weird" that might interfere with our analysis (e.g., perhaps some things were misspelled or a column holds different levels of information [country/region/state levels])?
+
+```{r Libraries to Include, include=FALSE}
+library("readr") # for read_csv
+library("dplyr") # for glimpse and mutate
+```
+
+```{r Check Data}
+covid_19_dataset <- read_csv("covid19.csv")
+dim(covid_19_dataset)
+vector_cols <- colnames(covid_19_dataset)
+vector_cols
+head(covid_19_dataset)
+glimpse(covid_19_dataset)
+```
+
+# From Checking the Data
+
+We have 10,903 rows and 14 columns of data. The names and descriptions of the columns are below (provided by Dataquest):
+
+1. **Date**: Date
+1. **Continent_Name**: Continent names
+1. **Two_Letter_Country_Code**: Country codes
+1. **Country_Region**: Country names
+1. **Province_State**: States/province names; value is All States when state/provincial level data is not available
+1. **positive**: Cumulative number of positive cases reported.
+1. **active**: Number of actively cases on that day.
+1. **hospitalized**: Cumulative number of hospitalized cases reported.
+1. **hospitalizedCurr**: Number of actively hospitalized cases on that day.
+1. **recovered**: Cumulative number of recovered cases reported.
+1. **death**: Cumulative number of deaths reported.
+1. **total_tested**: Cumulative number of tests conducted.
+1. **daily_tested**: Number of tests conducted on the day; if daily data is unavailable, daily tested is averaged across number of days in between.
+1. **daily_positive**: Number of positive cases reported on the day; if daily data is unavailable, daily positive is averaged across number of days in.
+
+# Inconsistency to Rectify with Dataset
+
+The Province_State column has data with different levels: country level and state/province level. Let's extract only the country-level data in order to avoid some bias in our analyses with more granular and potentially repetitive data at the non-country level.
+
+```{r Filter Dataset to Country Level}
+covid_19_dataset_all_states <- filter(covid_19_dataset, Province_State == "All States")
+# With our dataset filtered to the country level, we can go ahead and remove the Province_State column since all the values in this column would be "All States."
+covid_19_dataset_all_states %>% select(-Province_State)
+```
+
+# Columns to Select for our Analysis
+
+Looking at our columns again, we can see that there are columns that provide daily information, and others that provide cumulative information. Hence, let's only look at the daily columns.
+
+```{r Select Daily Columns Data}
+# Create a dataset of daily data
+covid_19_dataset_all_states_daily <- select(covid_19_dataset_all_states, Date, Country_Region, active, hospitalizedCurr, daily_tested, daily_positive)
+# Take a glimpse of the data to make sure we are only looking at the columns mentioned above
+glimpse(covid_19_dataset_all_states_daily)
+```
+# Top Ten Countries by Cases
+
+If we want to extract the top ten countries by COVID-19 cases, we need to consider the following:
+
+* How can we get the overall number of COVID-19 tested, positive, active and hospitalized cases by country since we currently have daily data?
+* How do we then extract the top ten?
+
+To answer the above questions, we can aggregate the active, hospitalizedCurr, daily_tested, and daily_positive and group it by the Country_Region column. From there, we can arrange the dataset by the sum of daily tested in descending order to then pull the top ten countries.
+
+```{r Extract Top Ten Countries by Cases, message = FALSE}
+# Create our summary columns with the summation of each column mentioned in the above paragraph
+covid_19_dataset_all_states_daily_sum <-covid_19_dataset_all_states_daily %>%
+  group_by(Country_Region) %>% 
+  summarize(
+    tested = sum(daily_tested),
+    positive = sum(daily_positive),
+    active = sum(active),
+    hospitalized = sum(hospitalizedCurr)
+) %>% arrange(-tested)
+
+# Take only our top 10 countries by number of tested and put it in its own dataframe
+covid_top_10 <- head(covid_19_dataset_all_states_daily_sum, 10)
+covid_top_10
+```
+
+# Countries with Highest Number of Positive Cases Against Number of Tests
+
+Now that we've ordered the countries by number of people tested, let's look at the highest number of positive cases against number of tests performed.
+
+```{r Extract Top Countries by Number of Positive Cases Against Number of Tests Performed}
+# create vectors with the intent to create a matrix with the countries as our row names and the following vectors making up our column information
+countries <- covid_top_10$Country_Region
+tested_cases <- covid_top_10$tested
+positive_cases <- covid_top_10$positive
+active_cases <- covid_top_10$active
+hospitalized_cases <- covid_top_10$hospitalized
+
+# add the countries vector as names to the vectors we created above
+names(tested_cases) <- countries
+names(positive_cases) <- countries
+names(active_cases) <- countries
+names(hospitalized_cases) <- countries
+
+# calculate number of positive cases against number of tested
+ratios <- positive_cases / tested_cases
+ratios
+
+# from eyeballing the above data, we'll create a vector housing the top 3 ratios
+positive_tested_top_3 <- ratios[c("United Kingdom","United States","Turkey")]
+positive_tested_top_3
+```
+
+# Top Three Countries with Left Out Information Above Added Back In
+
+Since we have the top three countries by positive cases to tested cases, let's add back in the information we left out above for these countries into a matrix.
+
+```{r Create Matrix of Top Three Countries}
+# create a matrix of for all of the countries with the information left out above added back in
+country_matrix <- cbind(ratios, tested_cases, positive_cases, active_cases, hospitalized_cases)
+country_matrix
+
+# quick way to create a separate top 3 matrix
+country_matrix_top_3 <- country_matrix[c(7,5,1),1:ncol(country_matrix)]
+country_matrix_top_3
+```
+
+# Putting All of Our Data Together
+
+Now that we've figured out the top three countries with the highest number of positive cases to number of folks tested.
+
+With that, let's create a list to store all of our work in the same variable.
+
+```{r Create a List with All of Our Data Stored in the Same Variable}
+# summarize by repeating our exploratory question and provide an answer
+question <- "Which countries have had the highest number of positive cases against the number of tests performed?"
+answer <- c("Positive Tested Cases" = positive_tested_top_3)
+
+# create a list with all of our data structures together
+dataframe_list <- list(
+  original = covid_19_dataset, 
+  allstates = covid_19_dataset_all_states, 
+  daily = covid_19_dataset_all_states_daily, 
+  top_10= covid_top_10
+  )
+matrices_list <- list(country_matrix_top_3)
+vector_list <- list(vector_cols, countries)
+data_structure_list <- list(dataframe_list, covid_19_dataset, vector_list)
+
+# combine the data_structure_list with our question and answer variables above
+covid_analysis_list <- list(question, answer, data_structure_list)
+
+# display our answer
+covid_analysis_list[[2]]
+```
+
+# Summary
+
+From our analysis, we found the following three countries had the highest ratios of positive cases to testing performed with data gathered from January 20, 2020, to June 1, 2020.
+
+* United Kingdom
+* United States
+* Turkey
